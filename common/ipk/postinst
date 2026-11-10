@@ -1,0 +1,65 @@
+#!/bin/sh
+
+INIT_SCRIPT="/opt/etc/init.d/S55geodns"
+BINFILE="/opt/bin/geodns-helper"
+DNSMASQ_CONF="/opt/etc/dnsmasq.conf"
+
+# Multiplatform package: the helper for this router — as nfqws2-keenetic
+# detects it (opkg.conf), then checked by running it: on mipsel `uname -m`
+# says «mips» too
+install_binary_func() {
+  local OPKG_CONF="/opt/etc/opkg.conf"
+  local ARCH= x
+
+  if [ -f "$OPKG_CONF" ]; then
+    ARCH=$(grep -oE 'mips-3|mipsel-3|aarch64-3|armv7' "$OPKG_CONF" | head -n 1)
+  fi
+  case "$ARCH" in
+    "mips-3") ARCH="mips" ;;
+    "mipsel-3") ARCH="mipsel" ;;
+    "aarch64-3") ARCH="aarch64" ;;
+  esac
+
+  for x in $ARCH mipsel mips aarch64 armv7; do
+    [ -f "/opt/tmp/geodns_binary/geodns-helper-$x" ] || continue
+    chmod +x "/opt/tmp/geodns_binary/geodns-helper-$x"
+    if "/opt/tmp/geodns_binary/geodns-helper-$x" -h 2>&1 | grep -q geoscan; then
+      echo "Detected arch: $x"
+      cp -f "/opt/tmp/geodns_binary/geodns-helper-$x" "$BINFILE"
+      chmod +x "$BINFILE"
+      rm -rf "/opt/tmp/geodns_binary"
+      return 0
+    fi
+  done
+
+  echo "Failed to detect architecture"
+  exit 1
+}
+
+# dnsmasq reads the files geodns writes
+dnsmasq_conf_func() {
+  [ -f "$DNSMASQ_CONF" ] || return 0
+  grep -q 'geodns/dnsmasq-geo.conf' "$DNSMASQ_CONF" && return 0
+  echo "conf-file=/opt/etc/geodns/upstream.conf" >> "$DNSMASQ_CONF"
+  echo "conf-file=/opt/etc/geodns/dnsmasq-geo.conf" >> "$DNSMASQ_CONF"
+  echo "no-resolv" >> "$DNSMASQ_CONF"
+  echo "dnsmasq: added geodns files to $DNSMASQ_CONF"
+}
+
+if [ -d "/opt/tmp/geodns_binary" ]; then
+  install_binary_func
+fi
+
+touch /opt/etc/geodns/upstream.conf /opt/etc/geodns/dnsmasq-geo.conf
+dnsmasq_conf_func
+
+INSTALL_TYPE=$(cat "/opt/tmp/geodns_install_type" 2>/dev/null)
+rm -f "/opt/tmp/geodns_install_type"
+if [ "$INSTALL_TYPE" = "install" ]; then
+  echo "You can change settings in the configuration file: /opt/etc/geodns/geodns.conf"
+  echo "Installation successful. First check of servers — in a minute: geodns status"
+fi
+
+$INIT_SCRIPT start
+
+exit 0

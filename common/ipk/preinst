@@ -1,0 +1,19 @@
+#!/bin/sh
+
+INIT_SCRIPT="/opt/etc/init.d/S55geodns"
+
+# Set `install` or `upgrade` for postinst script
+echo "$1" > "/opt/tmp/geodns_install_type"
+
+# Stop service before upgrade
+if [ -f "$INIT_SCRIPT" ]; then
+  $INIT_SCRIPT stop
+fi
+
+# Ручная установка до пакета: группы были в sites.conf, теперь — groups.list
+if [ -f "/opt/etc/geodns/sites.conf" ]; then
+  mv -f "/opt/etc/geodns/sites.conf" "/opt/etc/geodns/sites.conf-old"
+  echo "sites.conf was moved to sites.conf-old (groups are in groups.list now)"
+fi
+
+exit 0

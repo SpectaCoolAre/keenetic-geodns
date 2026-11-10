@@ -1,0 +1,20 @@
+#!/bin/sh
+
+[ "${PKG_UPGRADE}" = "1" ] && exit 0
+
+CONFDIR="/opt/etc/geodns"
+
+rm -f /opt/bin/geodns-helper
+rm -rf /opt/var/run/geodns /opt/var/lib/geodns /opt/var/log/geodns.log
+
+echo -e "\nRemove lists and config? y/N"
+read yn
+case $yn in
+  [Yy]* )
+    rm -rf $CONFDIR
+    ;;
+esac
+
+echo "Uninstallation successful"
+echo "dnsmasq still reads /opt/etc/geodns files: remove the conf-file lines from /opt/etc/dnsmasq.conf if needed"
+exit 0

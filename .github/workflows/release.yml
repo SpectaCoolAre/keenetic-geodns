@@ -1,0 +1,166 @@
+name: Build and publish release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Test
+      run: make test
+
+  build-entware:
+    needs: [test]
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: '1.22'
+
+    - name: Bump version file
+      uses: francktrouillez/auto-bump-version-file@v1
+      with:
+        file: '${{ steps.version.outputs.content }}SION'
+
+    - name: Build entware packages
+      run: make packages
+
+    - name: Upload files
+      uses: actions/upload-artifact@v4
+      with:
+        name: entware
+        path: ./out/*.ipk
+        if-no-files-found: error
+
+    - name: Summary
+      run: |
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        ls ./out >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+  build-repository:
+    runs-on: ubuntu-22.04
+    needs: [build-entware]
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Bump version file
+      uses: francktrouillez/auto-bump-version-file@v1
+      with:
+        file: '${{ steps.version.outputs.content }}SION'
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: out
+        name: entware
+
+    - name: Build repository
+      run: make repository
+
+    - name: Upload pages artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: ./out/_pages
+
+    - name: Summary
+      run: |
+        echo '```' >> $GITHUB_STEP_SUMMARY
+        ls -R ./out/_pages >> $GITHUB_STEP_SUMMARY
+        echo '```' >> $GITHUB_STEP_SUMMARY
+
+  create-release:
+    runs-on: ubuntu-22.04
+    needs: [build-repository]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Bump version file
+      uses: francktrouillez/auto-bump-version-file@v1
+      with:
+        file: '${{ steps.version.outputs.content }}SION'
+
+    - name: Read version
+      id: version
+      uses: juliangruber/read-file-action@v1
+      with:
+        path: ./${{ steps.version.outputs.content }}SION
+        trim: true
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: out
+        name: entware
+
+    - name: Commit and push version file
+      run: |
+        git config --local user.email "github-actions[bot]@users.noreply.github.com"
+        git config --local user.name "github-actions[bot]"
+        git add ${{ steps.version.outputs.content }}SION
+        git commit -m "Version ${{ steps.version.outputs.content }}"
+        git tag -a v${{ steps.version.outputs.content }} -m "Version ${{ steps.version.outputs.content }}"
+        git push origin v${{ steps.version.outputs.content }}
+        git push
+
+    - name: Create Release
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        gh release create "v${{ steps.version.outputs.content }}" --title "Release v${{ steps.version.outputs.content }}" --prerelease \
+          out/keenetic-geodns_${{ steps.version.outputs.content }}_mips-3.4.ipk \
+          out/keenetic-geodns_${{ steps.version.outputs.content }}_mipsel-3.4.ipk \
+          out/keenetic-geodns_${{ steps.version.outputs.content }}_aarch64-3.10.ipk \
+          out/keenetic-geodns_${{ steps.version.outputs.content }}_all_entware.ipk
+
+    - name: Summary
+      run: |
+        echo "Release v${{ steps.version.outputs.content }} created" >> $GITHUB_STEP_SUMMARY
+
+  deploy-repository:
+    runs-on: ubuntu-22.04
+    needs: [build-repository]
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
+    - name: Setup Pages
+      uses: actions/configure-pages@v5
+
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
+
+    - name: Summary
+      run: |
+        echo "Repository deployed" >> $GITHUB_STEP_SUMMARY

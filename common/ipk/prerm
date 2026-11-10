@@ -1,0 +1,9 @@
+#!/bin/sh
+
+INIT_SCRIPT="/opt/etc/init.d/S55geodns"
+
+if [ -f "$INIT_SCRIPT" ]; then
+  $INIT_SCRIPT stop
+fi
+
+exit 0
