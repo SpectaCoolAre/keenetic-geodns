@@ -46,7 +46,9 @@
   /opt/etc/init.d/S55geodns stop
   rm -f /opt/bin/geodns /opt/bin/nfqws2-helper /opt/etc/init.d/S55geodns
   mv /opt/etc/geodns /opt/etc/geodns.manual
+  sed -i '/geodns/d' /opt/etc/dnsmasq.conf
   ```
+  Без последней команды dnsmasq не запустится (его конфиг ссылается на файлы в `/opt/etc/geodns`) — и в сети пропадёт интернет, пока пакет не установлен.
 
 ---
 
