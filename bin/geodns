@@ -59,6 +59,8 @@ FALLBACK="dns.zapret.moe"
 # Go ищет корневые сертификаты и по SSL_CERT_FILE: в Entware они здесь
 [ -f "$R/opt/etc/ssl/certs/ca-certificates.crt" ] && export SSL_CERT_FILE="$R/opt/etc/ssl/certs/ca-certificates.crt"
 DOH_URL="${DOH_URL:-https://%s/dns-query}"   # тесты подменяют
+# Адрес DoH сервера: «имя/путь» (api.magicdns.ru/sync) — по своему пути
+doh_url() { case "$1" in */*) echo "https://$1" ;; *) echo "$DOH_URL" | sed "s|%s|$1|" ;; esac; }
 mkdir -p "$RUN" "$ST" "${LOG%/*}"
 SCAN=$ST/scan.tsv
 
@@ -123,7 +125,7 @@ doh() { # <сервер> <имя>
     for (i = 1; i <= k; i++) { s = s sprintf("\\%03o", length(L[i])); for (j = 1; j <= length(L[i]); j++) s = s sprintf("\\%03o", ord[substr(L[i], j, 1)]) }
     printf "%s\\000\\000\\001\\000\\001", s }' > "$f.fmt"
   printf "$(cat "$f.fmt")" > "$f.q"
-  url=$(echo "$DOH_URL" | sed "s|%s|$1|")
+  url=$(doh_url "$1")
   curl -s --max-time 6 -H 'content-type: application/dns-message' -H 'accept: application/dns-message' \
     --data-binary @"$f.q" "$url" -o "$f.r" 2>/dev/null
   { od -An -tu1 -v "$f.r" 2>/dev/null || hexdump -v -e '1/1 "%u "' "$f.r" 2>/dev/null; } | awk '
@@ -255,7 +257,7 @@ build() {
 proxy_alive() { netstat -lnu 2>/dev/null | grep -q "127\.0\.0\.1:$1 "; }
 proxy_start() { # <сервер> <порт>
   local out
-  out=$(https-dns-proxy -a 127.0.0.1 -p "$2" -r "https://$1/dns-query" -b "$BOOTSTRAP" -d 2>&1 | grep -v -i -E 'root|^-+$')
+  out=$(https-dns-proxy -a 127.0.0.1 -p "$2" -r "$(case "$1" in */*) echo "https://$1" ;; *) echo "https://$1/dns-query" ;; esac)" -b "$BOOTSTRAP" -d 2>&1 | grep -v -i -E 'root|^-+$')
   sleep 1
   proxy_alive "$2" || log "прокси $1 (порт $2) не запустился: ${out:-без сообщений}"
 }

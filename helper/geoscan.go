@@ -674,9 +674,14 @@ func dotConn(host, addr, port string, names []string, idx []int, deadline time.T
 // параллельно в том же соединении HTTP/2
 func dohScan(server string, names []string, boot string, wait time.Duration) scanResult {
 	r := newResult(server, len(names))
-	host, _, err := net.SplitHostPort(server)
+	// «имя/путь» — DoH не по стандартному пути (api.magicdns.ru/sync)
+	hp, path := server, "/dns-query"
+	if i := strings.Index(server, "/"); i > 0 {
+		hp, path = server[:i], server[i:]
+	}
+	host, _, err := net.SplitHostPort(hp)
 	if err != nil {
-		host = server
+		host = hp
 	}
 	deadline := time.Now().Add(wait)
 	addr, err := serverAddr(host, boot, 3*time.Second)
@@ -700,7 +705,7 @@ func dohScan(server string, names []string, boot string, wait time.Duration) sca
 		if err != nil {
 			return nil, nil
 		}
-		req, _ := http.NewRequest("POST", "https://"+host+"/dns-query", bytes.NewReader(q))
+		req, _ := http.NewRequest("POST", "https://"+host+path, bytes.NewReader(q))
 		req.Header.Set("Content-Type", "application/dns-message")
 		req.Header.Set("Accept", "application/dns-message")
 		resp, err := cl.Do(req)
@@ -758,9 +763,11 @@ var dohPort = "443"
 var dohOnly bool
 
 func scanServer(server string, names []string, boot string, wait time.Duration) scanResult {
-	if dohOnly {
+	// «имя/путь» — сервер только с DoH по своему пути: DoT у него не пробуем;
+	// роутер (-doh) ходит к серверам только через https-dns-proxy
+	if dohOnly || strings.Contains(server, "/") {
 		h := dohScan(server, names, boot, wait)
-		if !h.ok && h.err != "" {
+		if dohOnly && !h.ok && h.err != "" {
 			h.err = "DoH: " + h.err
 		}
 		return h
@@ -1436,7 +1443,8 @@ func formatScan(r scanResult) string {
 	return line
 }
 
-// formatInfo — строки «!сервер<TAB>удачных/попыток<TAB>без сертификата»
+// formatInfo — строки «!сервер<TAB>удачных/попыток<TAB>без сертификата[<TAB>адрес]»:
+// адрес — по нему модуль проверяет, не заблокирован ли сервер по IP
 func formatInfo(res []scanResult) []string {
 	var out []string
 	for _, r := range res {

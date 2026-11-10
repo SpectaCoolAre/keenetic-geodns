@@ -45,7 +45,7 @@ jobs:
     - name: Bump version file
       uses: francktrouillez/auto-bump-version-file@v1
       with:
-        file: '${{ steps.version.outputs.content }}SION'
+        file: 'VERSION'
 
     - name: Build entware packages
       run: make packages
@@ -74,7 +74,7 @@ jobs:
     - name: Bump version file
       uses: francktrouillez/auto-bump-version-file@v1
       with:
-        file: '${{ steps.version.outputs.content }}SION'
+        file: 'VERSION'
 
     - name: Download artifacts
       uses: actions/download-artifact@v4
@@ -107,13 +107,13 @@ jobs:
     - name: Bump version file
       uses: francktrouillez/auto-bump-version-file@v1
       with:
-        file: '${{ steps.version.outputs.content }}SION'
+        file: 'VERSION'
 
     - name: Read version
       id: version
       uses: juliangruber/read-file-action@v1
       with:
-        path: ./${{ steps.version.outputs.content }}SION
+        path: ./VERSION
         trim: true
 
     - name: Download artifacts
@@ -126,7 +126,7 @@ jobs:
       run: |
         git config --local user.email "github-actions[bot]@users.noreply.github.com"
         git config --local user.name "github-actions[bot]"
-        git add ${{ steps.version.outputs.content }}SION
+        git add VERSION
         git commit -m "Version ${{ steps.version.outputs.content }}"
         git tag -a v${{ steps.version.outputs.content }} -m "Version ${{ steps.version.outputs.content }}"
         git push origin v${{ steps.version.outputs.content }}

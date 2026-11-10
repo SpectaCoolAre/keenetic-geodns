@@ -48,6 +48,13 @@ case "$a" in *"["*) ok 1 "no «[service]» line is taken for a server" ;; *) ok 
 has "$a" "dns.nullsproxy.com" "NullsProxy (Supercell) is checked"
 rm -f "$RT/opt/var/run/geodns/scan.failed"
 
+echo "== a server with its own DoH path"
+printf '#!/bin/sh\necho "$@" >> "%s"\nexit 0\n' "$MOCK/hdp.args" > "$MOCK/https-dns-proxy"; chmod 755 "$MOCK/https-dns-proxy"
+GEODNS_ROOT="$RT" sh -c '. "$1"; proxy_start api.example/sync 5099; proxy_start dns.example 5098' _ "$REPO/bin/geodns" > /dev/null 2>&1
+has "$(cat "$MOCK/hdp.args" 2>/dev/null)" "-r https://api.example/sync " "https-dns-proxy gets the server's own path"
+has "$(cat "$MOCK/hdp.args" 2>/dev/null)" "-r https://dns.example/dns-query " "and /dns-query for the rest"
+printf '#!/bin/sh\nexit 0\n' > "$MOCK/https-dns-proxy"
+
 echo "== full check: the module's scanner and server choice"
 helper_ok
 geodns scan > /dev/null 2>&1
