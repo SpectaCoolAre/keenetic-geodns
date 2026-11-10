@@ -31,7 +31,7 @@ has "$(cat "$L")" "dns.example: DoH: x509: certificate signed by unknown authori
 has "$(cat "$L")" "geodns-helper: boom" "and what the helper said"
 geodns build
 has "$(grep '/claude.ai/' "$C")" "127.0.0.1#5053" "without a check the list goes to the fallback server, not to the provider"
-has "$(cat "$PORTS")" "dns.bezmezhau.com 5053" "the fallback server gets the pool port"
+has "$(cat "$PORTS")" "dns.zapret.moe 5053" "the fallback server gets the pool port"
 has "$(geodns status 2>/dev/null)" "запасной" "and the status says it is the fallback"
 rm -f "$RT/opt/var/run/geodns/scan.failed"
 printf '(\n' > "$H"

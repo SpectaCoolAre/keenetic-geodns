@@ -51,8 +51,10 @@ HOT_BASE="chatgpt.com claude.ai gemini.google.com gamea.clashofclans.com account
 REF="https://common.dot.dns.yandex.net/dns-query,77.88.8.8:53"
 SCAN_VER=4
 # пока проверки не было (или ни один сервер не ответил) — весь список сюда, а
-# не к провайдеру: иначе дома до первой удачной проверки геоблок везде
-FALLBACK="dns.bezmezhau.com"
+# не к провайдеру: иначе дома до первой удачной проверки геоблок везде.
+# Роутер ходит только по DoH, а zapret.moe — сервер только с DoH, в домашней
+# сети (09.11) обходил 254 домена списка; Comss с ноября не обходит ИИ-сервисы
+FALLBACK="dns.zapret.moe"
 [ -f "$CONF" ] && . "$CONF"
 # Go ищет корневые сертификаты и по SSL_CERT_FILE: в Entware они здесь
 [ -f "$R/opt/etc/ssl/certs/ca-certificates.crt" ] && export SSL_CERT_FILE="$R/opt/etc/ssl/certs/ca-certificates.crt"
