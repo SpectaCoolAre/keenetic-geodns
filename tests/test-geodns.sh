@@ -39,6 +39,15 @@ geodns scan > /dev/null 2>&1
 has "$(cat "$L")" "не запускается на этом роутере" "a helper built for another CPU is named in the log"
 rm -f "$RT/opt/var/run/geodns/scan.failed"
 
+echo "== the server list: «[Service]» lines are names, not servers"
+printf '#!/bin/sh\n[ "$1" = -h ] && { echo "  -geoscan string" >&2; exit 2; }\necho "$@" > "%s"\n' "$MOCK/args" > "$H"; chmod 755 "$H"
+geodns scan > /dev/null 2>&1
+a=$(cat "$MOCK/args" 2>/dev/null)
+has "$a" "sync.bezmezhau.com,dns.dagami.ru" "the check gets the addresses of the list"
+case "$a" in *"["*) ok 1 "no «[service]» line is taken for a server" ;; *) ok 0 "no «[service]» line is taken for a server" ;; esac
+has "$a" "dns.nullsproxy.com" "NullsProxy (Supercell) is checked"
+rm -f "$RT/opt/var/run/geodns/scan.failed"
+
 echo "== full check: the module's scanner and server choice"
 helper_ok
 geodns scan > /dev/null 2>&1

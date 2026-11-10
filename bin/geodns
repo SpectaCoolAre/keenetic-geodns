@@ -148,7 +148,7 @@ names() {
     sed 's/[[:space:]]*#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//' |
     grep -E '^[a-z0-9.-]+\.[a-z0-9-]+$' | sort -u
 }
-servers() { grep -v '^[[:space:]]*#' "$SERVERS_LIST" 2>/dev/null | awk 'NF { print $1 }' | tr '\n' ',' | sed 's/,$//'; }
+servers() { sed 's/[[:space:]]*#.*//' "$SERVERS_LIST" 2>/dev/null | awk 'NF && !/^\[/ { print $1 }' | tr '\n' ',' | sed 's/,$//'; }
 scan_time() { sed -n '1s/^#time=\([0-9]*\).*/\1/p' "$1" 2>/dev/null; }
 # Проверка — как dns_geo_scan модуля, тем же helper. full — весь
 # список раз в 4 часа; hot — основные сервисы раз в полчаса и по факту
