@@ -96,9 +96,18 @@
    opkg install keenetic-geodns
    ```
 
-4. Через минуту-две проверьте, что серверы выбраны
+4. Отдайте DNS роутера dnsmasq из Entware — в **CLI роутера** (веб-интерфейс `http://192.168.1.1/a`
+   или `telnet 192.168.1.1` под admin), не в Entware:
+   ```
+   opkg dns-override
+   system configuration save
+   ```
+   Без этого порт 53 остаётся у встроенного DNS Keenetic, и geodns не получает запросов.
+
+5. Через минуту-две проверьте, что серверы выбраны
    ```bash
    geodns status
+   nslookup claude.ai 192.168.1.1
    ```
 
 ##### Обновление
@@ -112,7 +121,15 @@ opkg upgrade keenetic-geodns
 
 ```bash
 opkg remove --autoremove keenetic-geodns
+sed -i '/geodns/d' /opt/etc/dnsmasq.conf
 ```
+Если dnsmasq больше не нужен — верните DNS встроенному DNS Keenetic, иначе в сети пропадёт
+интернет (порт 53 никто не слушает). В CLI роутера:
+```
+no opkg dns-override
+system configuration save
+```
+и перезагрузите роутер.
 
 ##### Информация об установленной версии
 
