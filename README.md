@@ -67,6 +67,8 @@
    echo "src/gz keenetic-geodns https://spectacoolare.github.io/keenetic-geodns/all" > /opt/etc/opkg/keenetic-geodns.conf
    ```
    Репозиторий универсальный, поддерживаемые архитектуры: `mipsel`, `mips`, `aarch64`, `armv7`.
+   Универсальный пакет несёт помощник под все архитектуры (≈9 МБ при установке); если Entware во
+   встроенной памяти и места мало — возьмите репозиторий своей архитектуры ниже (≈2,5 МБ).
 
    <details>
      <summary>Или можете выбрать репозиторий под конкретную архитектуру</summary>

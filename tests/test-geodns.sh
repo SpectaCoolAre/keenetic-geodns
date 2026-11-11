@@ -55,6 +55,26 @@ has "$(cat "$MOCK/hdp.args" 2>/dev/null)" "-r https://api.example/sync " "https-
 has "$(cat "$MOCK/hdp.args" 2>/dev/null)" "-r https://dns.example/dns-query " "and /dns-query for the rest"
 printf '#!/bin/sh\nexit 0\n' > "$MOCK/https-dns-proxy"
 
+echo "== after a package upgrade with a new server list the old check is not used"
+mkdir -p "$S"; printf '#time=%s boot=x v=4\ndns.comss.one\tok\t50\t29\t722\t0\ttls\n' "$(date +%s)" > "$S/scan.tsv"
+GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; scan_due "$SCAN" 14400' _ "$REPO/bin/geodns"; ok $? "a fresh check of other servers is due at once"
+{ printf '#time=%s boot=x v=4\n' "$(date +%s)"; GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; servers' _ "$REPO/bin/geodns" | tr ',' '\n' | awk '{ print $1 "\tok\t50\t1\t722\t0\ttls" }'; } > "$S/scan.tsv.new"
+sed -i "1s/v=4/v=$(sed -n 's/^SCAN_VER=\([0-9]*\).*/\1/p' "$REPO/bin/geodns")/" "$S/scan.tsv.new"; mv "$S/scan.tsv.new" "$S/scan.tsv"
+GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; scan_due "$SCAN" 14400' _ "$REPO/bin/geodns"; [ $? = 1 ]; ok $? "a fresh check of the same servers is not"
+rm -f "$S/scan.tsv"
+
+echo "== dnsmasq cannot take port 53"
+mkdir -p "$RT/opt/etc/init.d" "$RT/opt/sbin"
+printf '#!/bin/sh\necho " Starting dnsmasq...              failed."\n' > "$RT/opt/etc/init.d/S56dnsmasq"
+printf '#!/bin/sh\ncase "$*" in *--test*) echo "syntax check OK." ;; *) echo "dnsmasq: failed to create listening socket for port 53: Address in use" >&2; exit 2 ;; esac\n' > "$RT/opt/sbin/dnsmasq"
+printf '#!/bin/sh\necho "udp        0      0 0.0.0.0:53              0.0.0.0:*                           537/ndnproxy"\n' > "$MOCK/netstat"
+chmod 755 "$RT/opt/etc/init.d/S56dnsmasq" "$RT/opt/sbin/dnsmasq" "$MOCK/netstat"
+GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; dnsmasq_restart' _ "$REPO/bin/geodns" >/dev/null 2>&1
+has "$(tail -n 2 "$L")" "Address in use" "the log has dnsmasq's own reason, not just «failed»"
+has "$(tail -n 2 "$L")" "537/ndnproxy" "and who holds port 53"
+has "$(tail -n 2 "$L")" "opkg dns-override" "and what to do about it"
+rm -f "$RT/opt/etc/init.d/S56dnsmasq" "$RT/opt/sbin/dnsmasq"; printf '#!/bin/sh\nexit 0\n' > "$MOCK/netstat"
+
 echo "== full check: the module's scanner and server choice"
 helper_ok
 geodns scan > /dev/null 2>&1

@@ -85,8 +85,16 @@ dnsmasq_restart() {
   if [ -n "$svc" ]; then out=$("$svc" restart 2>&1)
   else killall dnsmasq 2>/dev/null; sleep 1; out=$("$bin" -C "$R/opt/etc/dnsmasq.conf" 2>&1); fi
   sleep 1
-  if pidof dnsmasq >/dev/null; then log "dnsmasq запущен (${svc:-$bin})"
-  else log "dnsmasq не запустился (${svc:-$bin}): $out"; return 1; fi
+  if pidof dnsmasq >/dev/null; then log "dnsmasq запущен (${svc:-$bin})"; return 0; fi
+  # служба Entware пишет только «failed» — причину скажет сам dnsmasq
+  [ -n "$svc" ] && out=$("$bin" -C "$R/opt/etc/dnsmasq.conf" 2>&1) && sleep 1 && pidof dnsmasq >/dev/null &&
+    { log "dnsmasq запущен ($bin)"; return 0; }
+  log "dnsmasq не запустился (${svc:-$bin}): ${out:-без сообщений}"
+  # порт 53 у встроенного DNS Keenetic: в CLI роутера не включён opkg dns-override
+  if netstat -lnup 2>/dev/null | grep ':53 ' | grep -qv dnsmasq; then
+    log "порт 53 занят: $(netstat -lnup 2>/dev/null | grep ':53 ' | grep -v dnsmasq | awk '{ print $NF }' | sort -u | tr '\n' ' ')— в CLI роутера выполните: opkg dns-override, затем system configuration save"
+  fi
+  return 1
 }
 
 # IPv4-адреса из ответа busybox nslookup (оба формата вывода)
@@ -201,8 +209,12 @@ scan_due() { # <файл> <секунд> — пора проверять?
   t=$(scan_time "$1")
   [ -n "$t" ] || return 0
   head -n 1 "$1" | grep -q " v=$SCAN_VER\$" || return 0
+  # список серверов сменился (обновление пакета) — прежняя проверка не о нём
+  [ "$1" = "$SCAN" ] && [ "$(scanned "$1")" != "$(servers | tr ',' '\n' | sort | tr '\n' ' ')" ] && return 0
   [ $(( $(date +%s) - t )) -ge "$2" ]
 }
+# Серверы, которые проверка спрашивала (строки итога), — по алфавиту
+scanned() { awk -F'\t' '!/^[#=+!?]/ && NF > 1 { print $1 }' "$1" 2>/dev/null | sort | tr '\n' ' '; }
 
 # ---------------------------------------------------------------- выбор — общий код модуля
 rel_update() { awk -F'\t' -v gf="$GROUPS" -v rf="$SCAN.rel" -f "$D/geo-rel.awk" "$1"; }
