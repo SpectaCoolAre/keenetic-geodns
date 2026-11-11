@@ -240,9 +240,13 @@ scanned() { awk -F'\t' '!/^[#=+!?]/ && NF > 1 { print $1 }' "$1" 2>/dev/null | s
 rel_update() { awk -F'\t' -v gf="$GROUPS" -v rf="$SCAN.rel" -f "$D/geo-rel.awk" "$1"; }
 # Не брать: отключённые вручную и на паузе; на паузе все ответившие — только
 # отключённые вручную (лучше пробовать, чем никуда)
+# Закреплённые за группой серверы («=сервер» в prefer.list)
+fixed() { sed 's/#.*//' "$PREFER" 2>/dev/null | tr ' \t' '\n\n' | sed -n 's/^=//p'; }
 off_eff() {
   local e="$RUN/off.eff"
-  { cat "$OFF" 2>/dev/null; cut -f1 "$DOWN" 2>/dev/null; } | awk 'NF && !s[$0]++' > "$e.$$"
+  # закреплённый на паузу не встаёт: проба HTTPS через его прокси ничего не
+  # говорит об играх (NullsProxy вставал на паузу, и Supercell уходил к другим)
+  { cat "$OFF" 2>/dev/null; cut -f1 "$DOWN" 2>/dev/null | grep -v -x -F "$(fixed)"; } | awk 'NF && !s[$0]++' > "$e.$$"
   if [ -s "$DOWN" ] && ! awk -F'\t' -v of="$e.$$" 'BEGIN { while ((getline l < of) > 0) o[l] = 1 }
       !/^[#=+!?]/ && $2 == "ok" && $4 > 0 && !($1 in o) { x = 1 } END { exit !x }' "$SCAN" 2>/dev/null; then
     cat "$OFF" 2>/dev/null > "$e.$$"
@@ -401,14 +405,14 @@ provider_text() {
 # открывалась» и у рабочего прокси, и NullsProxy (только для Supercell)
 # вставал на паузу — игры уходили на другой сервер. Сервер, у которого есть
 # только такие домены, не проверяется
-proxy_targets() { # -> «сервер прокси домен»
-  awk -F'\t' -v base="$HOT_BASE" '
+proxy_targets() { # -> «сервер прокси домен»; закреплённые не проверяются
+  awk -F'\t' -v base="$HOT_BASE" -v fx=" $(fixed | tr '\n' ' ') " '
     BEGIN { nb = split(base, b, " "); for (i = 1; i <= nb; i++) B[b[i]] = 1 }
     /^\+/ { h = substr($1, 2); if (!(h in px) || $3 + 0 > pn[h]) { px[h] = $2; pn[h] = $3 + 0 }; next }
     /^=game[a-z0-9]*\./ { next }
     /^=/ { d = substr($1, 2); n = split($2, sv, ",")
       for (i = 1; i <= n; i++) { h = sv[i]; if (!(h in dm) || ((d in B) && !(dm[h] in B))) dm[h] = d } }
-    END { for (h in px) if (h in dm) print h, px[h], dm[h] }' "$SCAN" 2>/dev/null
+    END { for (h in px) if ((h in dm) && !index(fx, " " h " ")) print h, px[h], dm[h] }' "$SCAN" 2>/dev/null
 }
 # Открывается ли сайт через прокси: TLS и хоть какой-то ответ HTTP
 proxy_open() { # <прокси> <домен>

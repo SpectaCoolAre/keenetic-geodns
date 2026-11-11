@@ -142,6 +142,13 @@ if command -v busybox >/dev/null 2>&1; then
   [ "$(wc -l < "$S/scan.tsv.rel")" -gt 1 ]; ok $? "the reliability history is updated by busybox awk"
 fi
 
+echo "== a server fixed for a group (NullsProxy for Supercell)"
+printf 'dns.nullsproxy.com\t87.245.216.10\t%s\t%s\t1\n' "$(date +%s)" "$(( $(date +%s) + 1800 ))" > "$S/down.list"
+! grep -qx dns.nullsproxy.com "$(gx off_eff)"; ok $? "a fixed server is never paused by the proxy probe (it says nothing about game servers)"
+printf '+dns.nullsproxy.com\t87.245.216.10\t3\n=aircanada.com\tdns.nullsproxy.com\n' >> "$S/scan.tsv"
+case "$(gx proxy_targets)" in *dns.nullsproxy.com*) ok 1 "and its proxy is not probed" ;; *) ok 0 "and its proxy is not probed" ;; esac
+rm -f "$S/down.list"
+
 echo "== the default DoH and the provider DNS"
 GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; DEFAULT_DOH=dns.example; default_keep; default_keep' _ "$REPO/bin/geodns" > /dev/null 2>&1
 [ ! -f "$RT/opt/var/run/geodns/default.down" ]; ok $? "two failed checks of the default DoH do not switch DNS (no dnsmasq restart every minute)"
