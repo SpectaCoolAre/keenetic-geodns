@@ -61,17 +61,19 @@
    opkg remove wget-nossl
    ```
 
-2. Установите opkg-репозиторий в систему
+2. Установите opkg-репозиторий под архитектуру роутера (определится сама по opkg.conf)
    ```bash
    mkdir -p /opt/etc/opkg
-   echo "src/gz keenetic-geodns https://spectacoolare.github.io/keenetic-geodns/all" > /opt/etc/opkg/keenetic-geodns.conf
+   A=$(grep -oE 'mipsel|mips|aarch64|armv7' /opt/etc/opkg.conf | head -n 1)
+   echo "src/gz keenetic-geodns https://spectacoolare.github.io/keenetic-geodns/${A:-all}" > /opt/etc/opkg/keenetic-geodns.conf
+   echo "репозиторий: ${A:-all}"
    ```
-   Репозиторий универсальный, поддерживаемые архитектуры: `mipsel`, `mips`, `aarch64`, `armv7`.
-   Универсальный пакет несёт помощник под все архитектуры (≈9 МБ при установке); если Entware во
-   встроенной памяти и места мало — возьмите репозиторий своей архитектуры ниже (≈2,5 МБ).
+   Пакет своей архитектуры — ≈2,5 МБ. Если архитектура не определилась (`all`), ставится
+   универсальный пакет: помощник под все архитектуры, ≈9 МБ во время установки — во встроенной
+   памяти роутера может не хватить места.
 
    <details>
-     <summary>Или можете выбрать репозиторий под конкретную архитектуру</summary>
+     <summary>Или выберите репозиторий вручную</summary>
 
      - `mips-3.4` <sub><sup>Keenetic Giga SE (KN-2410), Ultra SE (KN-2510), DSL (KN-2010), Launcher DSL (KN-2012), Duo (KN-2110), Skipper DSL (KN-2112), Hopper DSL (KN-3610); Zyxel Keenetic DSL, LTE, VOX</sup></sub>
        ```bash
@@ -89,6 +91,17 @@
        ```bash
        mkdir -p /opt/etc/opkg
        echo "src/gz keenetic-geodns https://spectacoolare.github.io/keenetic-geodns/aarch64" > /opt/etc/opkg/keenetic-geodns.conf
+       ```
+     - `armv7-3.2` <sub><sup>роутеры и устройства с Entware armv7</sup></sub>
+       ```bash
+       mkdir -p /opt/etc/opkg
+       echo "src/gz keenetic-geodns https://spectacoolare.github.io/keenetic-geodns/armv7" > /opt/etc/opkg/keenetic-geodns.conf
+       ```
+
+     - `all` — универсальный (≈9 МБ при установке)
+       ```bash
+       mkdir -p /opt/etc/opkg
+       echo "src/gz keenetic-geodns https://spectacoolare.github.io/keenetic-geodns/all" > /opt/etc/opkg/keenetic-geodns.conf
        ```
    </details>
 

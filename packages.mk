@@ -99,6 +99,14 @@ aarch64: _helper
 		BIN=aarch64 \
 		_ipk
 
+armv7: _helper
+	@make \
+		BUILD_DIR=armv7 \
+		ARCH=armv7-3.2 \
+		FILENAME=keenetic-geodns_$(VERSION)_armv7-3.2.ipk \
+		BIN=armv7 \
+		_ipk
+
 multi: _helper
 	@make \
 		BUILD_DIR=all \
@@ -106,4 +114,4 @@ multi: _helper
 		FILENAME=keenetic-geodns_$(VERSION)_all_entware.ipk \
 		_ipk
 
-packages: mipsel mips aarch64 multi
+packages: mipsel mips aarch64 armv7 multi

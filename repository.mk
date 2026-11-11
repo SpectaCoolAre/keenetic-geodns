@@ -22,6 +22,7 @@ _repo-index:
 	echo '<pre>' >> out/_pages/index.html
 	echo '<a href="all/">all/</a>' >> out/_pages/index.html
 	echo '<a href="aarch64/">aarch64/</a>' >> out/_pages/index.html
+	echo '<a href="armv7/">armv7/</a>' >> out/_pages/index.html
 	echo '<a href="mips/">mips/</a>' >> out/_pages/index.html
 	echo '<a href="mipsel/">mipsel/</a>' >> out/_pages/index.html
 	echo '</pre>' >> out/_pages/index.html
@@ -67,6 +68,13 @@ repo-aarch64:
 		FILENAME=keenetic-geodns_$(VERSION)_aarch64-3.10.ipk \
 		_repository
 
+repo-armv7:
+	@make \
+		BUILD_DIR=armv7 \
+		ARCH=armv7-3.2 \
+		FILENAME=keenetic-geodns_$(VERSION)_armv7-3.2.ipk \
+		_repository
+
 repo-multi:
 	@make \
 		BUILD_DIR=all \
@@ -74,4 +82,4 @@ repo-multi:
 		FILENAME=keenetic-geodns_$(VERSION)_all_entware.ipk \
 		_repository
 
-repository: repo-mipsel repo-mips repo-aarch64 repo-multi _repo-index
+repository: repo-mipsel repo-mips repo-aarch64 repo-armv7 repo-multi _repo-index

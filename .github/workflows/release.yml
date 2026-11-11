@@ -140,6 +140,7 @@ jobs:
           out/keenetic-geodns_${{ steps.version.outputs.content }}_mips-3.4.ipk \
           out/keenetic-geodns_${{ steps.version.outputs.content }}_mipsel-3.4.ipk \
           out/keenetic-geodns_${{ steps.version.outputs.content }}_aarch64-3.10.ipk \
+          out/keenetic-geodns_${{ steps.version.outputs.content }}_armv7-3.2.ipk \
           out/keenetic-geodns_${{ steps.version.outputs.content }}_all_entware.ipk
 
     - name: Summary
