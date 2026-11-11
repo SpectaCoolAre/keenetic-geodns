@@ -386,11 +386,16 @@ provider_text() {
 # на паузу (down.list), сайты уходят на другие; проверка снова — через 30 мин,
 # 1 ч, дальше раз в 2 ч; открылся — сервер возвращается.
 # Прокси сервера — адрес, который он отдаёт чаще всего; домен — тот, для
-# которого он его отдаёт (основные сервисы — первыми)
+# которого он его отдаёт (основные сервисы — первыми). Игровые серверы
+# (gamea.clashofclans.com, game.*) — не по HTTPS: проба HTTPS к ним «не
+# открывалась» и у рабочего прокси, и NullsProxy (только для Supercell)
+# вставал на паузу — игры уходили на другой сервер. Сервер, у которого есть
+# только такие домены, не проверяется
 proxy_targets() { # -> «сервер прокси домен»
   awk -F'\t' -v base="$HOT_BASE" '
     BEGIN { nb = split(base, b, " "); for (i = 1; i <= nb; i++) B[b[i]] = 1 }
     /^\+/ { h = substr($1, 2); if (!(h in px) || $3 + 0 > pn[h]) { px[h] = $2; pn[h] = $3 + 0 }; next }
+    /^=game[a-z0-9]*\./ { next }
     /^=/ { d = substr($1, 2); n = split($2, sv, ",")
       for (i = 1; i <= n; i++) { h = sv[i]; if (!(h in dm) || ((d in B) && !(dm[h] in B))) dm[h] = d } }
     END { for (h in px) if (h in dm) print h, px[h], dm[h] }' "$SCAN" 2>/dev/null
@@ -403,7 +408,7 @@ proxy_open() { # <прокси> <домен>
 # в работе и тех, кто на паузе со сроком (после частой), due — только на паузе
 # со сроком (сторож, раз в минуту — обычно ничего). Пауза сменилась — маршруты заново
 proxy_check() { # all|use|due
-  local now act s ip d ch
+  local now act s ip d ch a
   [ -s "$SCAN" ] || return 0
   now=$(date +%s)
   act=" $(pick) $(cut -f2 "$RUN/routes" 2>/dev/null | sort -u | tr '\n' ' ') "
@@ -414,8 +419,16 @@ proxy_check() { # all|use|due
       use) if [ -n "$nx" ]; then [ "$nx" -le "$now" ] || continue; else case "$act" in *" $s "*) ;; *) continue ;; esac; fi ;;
       *) [ -n "$nx" ] && [ "$nx" -le "$now" ] || continue ;;
     esac
+    # адрес — тот, что сервер даёт для этого домена сейчас: самый частый мог
+    # быть прокси других сайтов, и проба «не открывалась» у рабочего сервера
+    a=$("$HELPER" -ask "$s" -samples "$d" -boot "$(provider):53" -doh -wait 6s 2>/dev/null | head -n 1 | cut -f2 | cut -d, -f1)
+    [ -n "$a" ] && ip=$a
     if proxy_open "$ip" "$d"; then echo "$s	$ip	up"; else echo "$s	$ip	down"; fi
   done > "$RUN/pcheck"
+  # полная: на паузе остаются только те, кого есть чем проверить
+  if [ "$1" = all ] && [ -s "$DOWN" ]; then
+    proxy_targets | awk 'NR == FNR { t[$1] = 1; next } ($1 in t)' - "$DOWN" > "$DOWN.t"; mv -f "$DOWN.t" "$DOWN"
+  fi
   [ -s "$RUN/pcheck" ] || return 0
   ch=$(cat "$DOWN" 2>/dev/null | awk -F'\t' -v res="$RUN/pcheck" -v now="$now" -v out="$DOWN.new" '
     BEGIN { while ((getline l < res) > 0) { split(l, a, "\t"); v[a[1]] = a[3]; ip[a[1]] = a[2] } }
@@ -480,7 +493,9 @@ status() {
   echo "серверы обхода: $(summary)"
   while read -r h p; do echo "прокси $h (порт $p): $(proxy_alive "$p" && echo работает || echo НЕ ЗАПУЩЕН)"; done < "$RUN/ports"
   for g in $(awk '!/^#/ && NF { print $1 }' "$GROUPS" 2>/dev/null); do
-    echo "группа $g: $(awk -v g="@$g" '$1 == g { print $2 }' "$ST/groups.pin" 2>/dev/null)"
+    p=$(awk -v g="@$g" '$1 == g { print $2 }' "$ST/groups.pin" 2>/dev/null)
+    if [ -n "$p" ] && grep -qx "$p" "$(off_eff)" 2>/dev/null; then echo "группа $g: — ($p на паузе или отключён; домены группы — по отдельности)"
+    else echo "группа $g: $p"; fi
   done
   awk -F'\t' 'NF >= 4 { print "на паузе: " $1 " (прокси " $2 " отсюда не открывается)" }' "$DOWN" 2>/dev/null
   echo "dnsmasq:  $(pidof dnsmasq >/dev/null && echo работает || echo НЕ ЗАПУЩЕН)"

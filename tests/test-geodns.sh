@@ -17,7 +17,8 @@ printf '#!/bin/sh\nexit 1\n' > "$MOCK/pidof"
 printf '#!/bin/sh\nip=""; w=""; for a; do [ "$p" = --resolve ] && ip="${a##*:}"; [ "$a" = -w ] && w=1; p="$a"; done\n[ -n "$w" ] || exit 7\nif [ -n "$ip" ] && grep -qx "$ip" "%s/curl.down" 2>/dev/null; then printf 000; exit 28; fi\nprintf 200\n' "$MOCK" > "$MOCK/curl"
 FIX="$HERE/fixtures/geoscan-mts-0911.tsv"
 H="$RT/opt/bin/geodns-helper"
-helper_ok() { printf '#!/bin/sh\n[ "$1" = -h ] && { echo "  -geoscan string" >&2; exit 2; }\ngrep -v "^#" "%s"\n' "$FIX" > "$H"; chmod 755 "$H"; }
+# -ask <сервер> -samples <домен>: адрес из ask.<сервер>, если есть, иначе ничего
+helper_ok() { printf '#!/bin/sh\n[ "$1" = -h ] && { echo "  -geoscan string" >&2; exit 2; }\nif [ "$1" = -ask ]; then [ -f "%s/ask.$2" ] && printf "%%s\\t%%s\\n" "$4" "$(cat "%s/ask.$2")"; exit 0; fi\ngrep -v "^#" "%s"\n' "$MOCK" "$MOCK" "$FIX" > "$H"; chmod 755 "$H"; }
 chmod 755 "$MOCK"/*
 geodns() { GEODNS_ROOT="$RT" sh "$REPO/bin/geodns" "$@"; }
 L="$RT/opt/var/log/geodns.log"; C="$G/dnsmasq-geo.conf"; PORTS="$RT/opt/var/run/geodns/ports"; S="$RT/opt/var/lib/geodns"
@@ -108,6 +109,13 @@ case "$(cat "$(gx off_eff)")" in *wlrus*) ok 1 "and the server can be chosen aga
 cut -f1 "$S/scan.tsv" | awk '!/^[#=+!?]/ && NF { printf "%s\t1.1.1.1\t1\t9999999999\t1\n", $1 }' > "$S/down.list"
 [ ! -s "$(gx off_eff)" ]; ok $? "all answering servers paused — the pause does not apply"
 rm -f "$S/down.list"
+
+echo "== the proxy checked is the one the server gives for that domain now"
+echo 198.51.100.50 > "$MOCK/ask.dns.wlrus.cfd"; echo 198.51.100.50 > "$MOCK/curl.down"
+gx proxy_check all > /dev/null 2>&1
+has "$(cat "$S/down.list" 2>/dev/null)" "dns.wlrus.cfd	198.51.100.50" "the address asked from the server is probed, not its most frequent one"
+rm -f "$MOCK/ask.dns.wlrus.cfd" "$MOCK/curl.down" "$S/down.list"
+case "$(gx proxy_targets)" in *" gamea.clashofclans.com"*) ok 1 "game servers are never the probe domain (not HTTPS)" ;; *) ok 0 "game servers are never the probe domain (not HTTPS)" ;; esac
 
 echo "== the default DoH and the provider DNS"
 GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; DEFAULT_DOH=dns.example; default_keep; default_keep' _ "$REPO/bin/geodns" > /dev/null 2>&1
