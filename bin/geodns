@@ -177,7 +177,7 @@ scan() { # full|hot
   local out boot n
   [ -x "$HELPER" ] || { log "нет $HELPER — проверка невозможна (переустановите пакет: opkg install --force-reinstall keenetic-geodns)"; return 1; }
   "$HELPER" -h 2>&1 | grep -q geoscan || { log "$HELPER не запускается на этом роутере — сборка не под его процессор: переустановите пакет keenetic-geodns"; : > "$RUN/scan.failed"; return 1; }
-  net_alive || { log "нет интернета (провайдер не отвечает) — проверку пропускаю"; return 1; }
+  net_alive || { sleep 5; net_alive; } || { sleep 10; net_alive; } || { log "нет интернета (провайдер не отвечает) — проверку пропускаю"; return 1; }
   mkdir "$RUN/scan.lock" 2>/dev/null || { log "проверка уже идёт"; return 1; }
   boot="$(provider):53"
   if [ "$1" = hot ]; then
@@ -486,8 +486,10 @@ watch() {
     if ! pidof dnsmasq >/dev/null || ! dns_alive; then
       if net_alive || ! pidof dnsmasq >/dev/null; then log "dnsmasq не отвечает — перезапуск"; dnsmasq_restart; fi
     fi
-    proxies_keep
+    # упавшие прокси — под той же блокировкой: во время перестройки порты
+    # уже новые, а прокси ещё старые, и «упавшим» казался рабочий
     if work_lock; then
+      proxies_keep
       if scan_due "$SCAN" "$SCAN_EVERY"; then scan full && apply && proxy_check all
       elif hot_due; then scan hot && apply && proxy_check use
       else proxy_check due

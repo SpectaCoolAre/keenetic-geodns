@@ -131,6 +131,17 @@ kill "$hold" 2>/dev/null; wait "$hold" 2>/dev/null
 gx work_lock; ok $? "a lock of a finished process is taken over"
 rm -rf "$RT/opt/var/run/geodns/work.lock"
 
+echo "== busybox awk (the router's awk) saves the choice"
+if command -v busybox >/dev/null 2>&1; then
+  mkdir -p "$SB/bb"; ln -sf "$(command -v busybox)" "$SB/bb/awk"
+  printf '@openai dns.example.gone\n' > "$S/groups.pin"
+  PATH="$SB/bb:$PATH" GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; pin_save' _ "$REPO/bin/geodns" > /dev/null 2>&1
+  ! grep -q 'dns.example.gone' "$S/groups.pin"; ok $? "a group server is saved over the old one (busybox awk dropped writes to a file it had read: the group stayed on a paused server)"
+  printf 'x.example\tdns.semqka.xyz\t0.000\t9\n' > "$S/scan.tsv.rel"
+  PATH="$SB/bb:$PATH" GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; rel_update "$SCAN"' _ "$REPO/bin/geodns" > /dev/null 2>&1
+  [ "$(wc -l < "$S/scan.tsv.rel")" -gt 1 ]; ok $? "the reliability history is updated by busybox awk"
+fi
+
 echo "== the default DoH and the provider DNS"
 GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; DEFAULT_DOH=dns.example; default_keep; default_keep' _ "$REPO/bin/geodns" > /dev/null 2>&1
 [ ! -f "$RT/opt/var/run/geodns/default.down" ]; ok $? "two failed checks of the default DoH do not switch DNS (no dnsmasq restart every minute)"
