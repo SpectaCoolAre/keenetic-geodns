@@ -21,13 +21,16 @@ install_binary_func() {
   esac
 
   for x in $ARCH mipsel mips aarch64 armv7; do
-    [ -f "/opt/tmp/geodns_binary/geodns-helper-$x" ] || continue
+    [ -s "/opt/tmp/geodns_binary/geodns-helper-$x" ] || continue
     chmod +x "/opt/tmp/geodns_binary/geodns-helper-$x"
     if "/opt/tmp/geodns_binary/geodns-helper-$x" -h 2>&1 | grep -q geoscan; then
       echo "Detected arch: $x"
       cp -f "/opt/tmp/geodns_binary/geodns-helper-$x" "$BINFILE"
       chmod +x "$BINFILE"
-      rm -rf "/opt/tmp/geodns_binary"
+      # the other helpers are emptied, not removed: they are in the package's
+      # file list, and opkg reports «unlinking … failed» for missing ones on
+      # upgrade or removal
+      for f in /opt/tmp/geodns_binary/geodns-helper-*; do : > "$f"; done
       return 0
     fi
   done
@@ -46,7 +49,7 @@ dnsmasq_conf_func() {
   echo "dnsmasq: added geodns files to $DNSMASQ_CONF"
 }
 
-if [ -d "/opt/tmp/geodns_binary" ]; then
+if [ -n "$(find /opt/tmp/geodns_binary -type f -size +0 2>/dev/null)" ]; then
   install_binary_func
 fi
 
