@@ -223,6 +223,16 @@ scan_due() { # <файл> <секунд> — пора проверять?
   [ "$1" = "$SCAN" ] && [ "$(scanned "$1")" != "$(servers | tr ',' '\n' | sort | tr '\n' ' ')" ] && return 0
   [ $(( $(date +%s) - t )) -ge "$2" ]
 }
+# Частая — не раньше HOT_EVERY и после частой, и после полной: полная удаляет
+# файл частой, и та шла через минуту — серверы, только что получившие сотни
+# запросов, ей не отвечали
+hot_due() {
+  local t h
+  [ -n "$(find "$RUN/scan.failed" -mmin -10 2>/dev/null)" ] && return 1
+  t=$(scan_time "$SCAN"); [ -n "$t" ] || return 1
+  h=$(scan_time "$SCAN.hot"); [ -n "$h" ] && [ "$h" -gt "$t" ] && t=$h
+  [ $(( $(date +%s) - t )) -ge "$HOT_EVERY" ]
+}
 # Серверы, которые проверка спрашивала (строки итога), — по алфавиту
 scanned() { awk -F'\t' '!/^[#=+!?]/ && NF > 1 { print $1 }' "$1" 2>/dev/null | sort | tr '\n' ' '; }
 
@@ -250,7 +260,7 @@ routes() { # [save] -> «домен<TAB>сервер<TAB>протокол» | «
   [ -n "$ft" ] && [ $(( $(date +%s) - ft )) -lt $(( HOT_EVERY * 2 )) ] && fresh=1
   names > "$RUN/names"
   awk -F'\t' -v prf="$PREFER" -v of="$(off_eff)" -v pf="$SCAN.pin" -v gpf="$ST/groups.pin" -v rf="$SCAN.rel" \
-    -v fresh="$fresh" -v base="$HOT_BASE" -v gf="$GROUPS" -v gl="$RUN/names" -v hf="$h" -v save="$1" -v pool="$(pick)" \
+    -v fresh="$fresh" -v keepfail=1 -v base="$HOT_BASE" -v gf="$GROUPS" -v gl="$RUN/names" -v hf="$h" -v save="$1" -v pool="$(pick)" \
     -f "$D/geo-routes.awk" "$SCAN" $h
 }
 pin_save() {
@@ -453,6 +463,21 @@ proxy_check() { # all|use|due
   done
   apply
 }
+# Одна проверка или перестройка за раз: команда (geodns scan) и сторож делили
+# порты и файлы маршрутов, и прокси запускался на порту, который уже отдан
+# другому серверу. Сторож занятое пропускает, команда ждёт (до 10 минут)
+work_lock() { # [wait]
+  local i=0 o
+  while ! mkdir "$RUN/work.lock" 2>/dev/null; do
+    o=$(cat "$RUN/work.lock/pid" 2>/dev/null)
+    if [ -n "$o" ] && ! kill -0 "$o" 2>/dev/null; then rm -rf "$RUN/work.lock"; continue; fi
+    [ "$1" = wait ] || return 1
+    i=$((i + 1)); [ "$i" -ge 600 ] && return 1
+    sleep 1
+  done
+  echo $$ > "$RUN/work.lock/pid"
+}
+work_unlock() { rm -rf "$RUN/work.lock"; }
 watch() {
   echo $$ > "$RUN/watch.pid"
   sleep 20   # после загрузки — дать WAN подняться
@@ -462,9 +487,12 @@ watch() {
       if net_alive || ! pidof dnsmasq >/dev/null; then log "dnsmasq не отвечает — перезапуск"; dnsmasq_restart; fi
     fi
     proxies_keep
-    if scan_due "$SCAN" "$SCAN_EVERY"; then scan full && apply && proxy_check all
-    elif scan_due "$SCAN.hot" "$HOT_EVERY" && [ "$(scan_time "$SCAN")" -lt $(( $(date +%s) - 60 )) ]; then scan hot && apply && proxy_check use
-    else proxy_check due
+    if work_lock; then
+      if scan_due "$SCAN" "$SCAN_EVERY"; then scan full && apply && proxy_check all
+      elif hot_due; then scan hot && apply && proxy_check use
+      else proxy_check due
+      fi
+      work_unlock
     fi
     sleep "$ALIVE_EVERY"
   done
@@ -537,8 +565,8 @@ case "$1" in
   stop) stop ;;
   restart) stop; sleep 1; start ;;
   status) status ;;
-  scan) scan full && apply && proxy_check all; tail -n 3 "$LOG" ;;
-  check) scan hot && apply && proxy_check use; tail -n 3 "$LOG" ;;
+  scan) work_lock wait; scan full && apply && proxy_check all; work_unlock; tail -n 3 "$LOG" ;;
+  check) work_lock wait; scan hot && apply && proxy_check use; work_unlock; tail -n 3 "$LOG" ;;
   routes) routes ;;
   test) test_domain "$2" ;;
   update) update ;;

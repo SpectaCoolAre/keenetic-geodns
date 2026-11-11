@@ -117,6 +117,20 @@ has "$(cat "$S/down.list" 2>/dev/null)" "dns.wlrus.cfd	198.51.100.50" "the addre
 rm -f "$MOCK/ask.dns.wlrus.cfd" "$MOCK/curl.down" "$S/down.list"
 case "$(gx proxy_targets)" in *" gamea.clashofclans.com"*) ok 1 "game servers are never the probe domain (not HTTPS)" ;; *) ok 0 "game servers are never the probe domain (not HTTPS)" ;; esac
 
+echo "== a frequent check right after the full one"
+gx hot_due; [ $? = 1 ]; ok $? "right after the full check the frequent one is not due (it ran a minute later, when servers rate-limit DoH)"
+before=$(geodns routes | grep '^claude.ai	')
+{ printf '#time=%s boot=x v=4\n' "$(date +%s)"; awk -F'\t' '!/^[#=+!?]/ && NF > 2 { print $1 "\tfail\t0\t0\t10\t0\t-\tDoH: context deadline exceeded" }' "$S/scan.tsv"; } > "$S/scan.tsv.hot"
+sed -i 's/^dns.semqka.xyz\tfail.*/dns.semqka.xyz\tok\t200\t5\t10\t0\thttps/' "$S/scan.tsv.hot"
+eq_r=$(geodns routes | grep '^claude.ai	')
+[ "$before" = "$eq_r" ]; ok $? "servers silent in a frequent check (DoH rate limits) are not dropped: routes do not collapse onto the one that answered"
+rm -f "$S/scan.tsv.hot"
+mkdir -p "$RT/opt/var/run/geodns/work.lock"; sleep 600 & hold=$!; echo "$hold" > "$RT/opt/var/run/geodns/work.lock/pid"
+gx work_lock; [ $? = 1 ]; ok $? "the watchdog skips while a command works (one check or rebuild at a time)"
+kill "$hold" 2>/dev/null; wait "$hold" 2>/dev/null
+gx work_lock; ok $? "a lock of a finished process is taken over"
+rm -rf "$RT/opt/var/run/geodns/work.lock"
+
 echo "== the default DoH and the provider DNS"
 GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; DEFAULT_DOH=dns.example; default_keep; default_keep' _ "$REPO/bin/geodns" > /dev/null 2>&1
 [ ! -f "$RT/opt/var/run/geodns/default.down" ]; ok $? "two failed checks of the default DoH do not switch DNS (no dnsmasq restart every minute)"
