@@ -13,6 +13,8 @@ printf 'PROVIDER_DNS="10.0.0.1"\nDEFAULT_DOH=""\n' > "$G/geodns.conf"
 printf '#!/bin/sh\necho "Name: x"; echo "Address 1: 1.2.3.4"\n' > "$MOCK/nslookup"
 for c in https-dns-proxy killall netstat; do printf '#!/bin/sh\nexit 0\n' > "$MOCK/$c"; done
 printf '#!/bin/sh\nexit 1\n' > "$MOCK/pidof"
+# curl: прокси из curl.down «не открывается» (000), остальные отвечают 200
+printf '#!/bin/sh\nip=""; w=""; for a; do [ "$p" = --resolve ] && ip="${a##*:}"; [ "$a" = -w ] && w=1; p="$a"; done\n[ -n "$w" ] || exit 7\nif [ -n "$ip" ] && grep -qx "$ip" "%s/curl.down" 2>/dev/null; then printf 000; exit 28; fi\nprintf 200\n' "$MOCK" > "$MOCK/curl"
 FIX="$HERE/fixtures/geoscan-mts-0911.tsv"
 H="$RT/opt/bin/geodns-helper"
 helper_ok() { printf '#!/bin/sh\n[ "$1" = -h ] && { echo "  -geoscan string" >&2; exit 2; }\ngrep -v "^#" "%s"\n' "$FIX" > "$H"; chmod 755 "$H"; }
@@ -86,6 +88,34 @@ has "$(grep '/claude.ai/' "$C")" "#$(port dns.wlrus.cfd)" "Claude — the server
 has "$(cat "$S/groups.pin")" "@google dns.bezmezhau.com" "group servers are pinned"
 has "$(geodns routes)" "gemini.google.com	dns.bezmezhau.com" "geodns routes prints routes as the module does"
 n=$(grep -c . "$C"); [ "$n" -gt 500 ]; ok $? "the whole list is routed ($n domains)"
+
+echo "== a server whose proxy does not open here is paused"
+gx() { GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; shift; "$@"' _ "$REPO/bin/geodns" "$@"; }
+wl=$(awk -F'\t' '$1 == "+dns.wlrus.cfd" && $3 + 0 > m { m = $3 + 0; ip = $2 } END { print ip }' "$S/scan.tsv")
+echo "$wl" > "$MOCK/curl.down"
+gx proxy_check all > /dev/null 2>&1
+has "$(cat "$S/down.list" 2>/dev/null)" "dns.wlrus.cfd	$wl" "11.11: wlrus, whose proxy no longer opens, is paused"
+has "$(cat "$L")" "на паузе: dns.wlrus.cfd — его прокси $wl отсюда не открывается" "the log says so"
+case "$(geodns routes | grep '^claude.ai	')" in *wlrus*) ok 1 "Claude leaves the paused server" ;; *) ok 0 "Claude leaves the paused server" ;; esac
+has "$(geodns status 2>/dev/null)" "на паузе: dns.wlrus.cfd" "the status shows the pause"
+gx proxy_check use > /dev/null 2>&1
+has "$(cat "$S/down.list" 2>/dev/null)" "dns.wlrus.cfd" "before its time it is not checked again"
+rm -f "$MOCK/curl.down"
+awk -F'\t' 'BEGIN { OFS = "\t" } { $4 = 1; print }' "$S/down.list" > "$S/down.t" && mv "$S/down.t" "$S/down.list"
+gx proxy_check use > /dev/null 2>&1
+[ ! -s "$S/down.list" ]; ok $? "its time came, the proxy opens — the pause is over"
+case "$(cat "$(gx off_eff)")" in *wlrus*) ok 1 "and the server can be chosen again (groups keep their server while it works: no jumping back)" ;; *) ok 0 "and the server can be chosen again (groups keep their server while it works: no jumping back)" ;; esac
+cut -f1 "$S/scan.tsv" | awk '!/^[#=+!?]/ && NF { printf "%s\t1.1.1.1\t1\t9999999999\t1\n", $1 }' > "$S/down.list"
+[ ! -s "$(gx off_eff)" ]; ok $? "all answering servers paused — the pause does not apply"
+rm -f "$S/down.list"
+
+echo "== the default DoH and the provider DNS"
+GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; DEFAULT_DOH=dns.example; default_keep; default_keep' _ "$REPO/bin/geodns" > /dev/null 2>&1
+[ ! -f "$RT/opt/var/run/geodns/default.down" ]; ok $? "two failed checks of the default DoH do not switch DNS (no dnsmasq restart every minute)"
+GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; DEFAULT_DOH=dns.example; default_keep' _ "$REPO/bin/geodns" > /dev/null 2>&1
+[ -f "$RT/opt/var/run/geodns/default.down" ]; ok $? "three in a row do"
+rm -f "$RT/opt/var/run/geodns/default.down" "$RT/opt/var/run/geodns/default.streak"
+has "$(GEODNS_ROOT="$RT" sh -c '. "$1" >/dev/null; PROVIDER_DNS=; provider_text' _ "$REPO/bin/geodns" 2>/dev/null)" "запасной DNS 77.88.8.8 — DNS провайдера нет" "no provider DNS anywhere: the status says it is a fallback, not the provider's"
 
 rm -rf "$SB"
 echo "----------------------------------------"

@@ -37,6 +37,7 @@ OFF=$D/off.list                    # серверы, отключённые вр
 GEO_CONF=$D/dnsmasq-geo.conf
 UP_CONF=$D/upstream.conf
 ST=$R/opt/var/lib/geodns           # итоги проверок — переживают перезагрузку
+DOWN=$ST/down.list                 # на паузе: прокси здесь не открывается (см. proxy_check)
 RUN=$R/opt/var/run/geodns
 LOG=$R/opt/var/log/geodns.log
 HELPER=${HELPER:-$R/opt/bin/geodns-helper}
@@ -116,6 +117,12 @@ provider() {
   fi
   echo "${p:-77.88.8.8}"
 }
+# DNS провайдера не нашёлся ни в настройке, ни у Keenetic — вместо него Яндекс
+provider_missing() {
+  [ -z "$PROVIDER_DNS" ] && [ -z "$(curl -s --max-time 5 http://127.0.0.1:79/rci/show/ip/name-server 2>/dev/null |
+    grep -o '"address": *"[0-9.]*"' | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*' |
+    grep -v -E '^(127\.|0\.|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)')" ]
+}
 providers_all() {
   if [ -n "$PROVIDER_DNS" ]; then echo "$PROVIDER_DNS" | tr ',' ' '; else provider; fi
 }
@@ -125,7 +132,7 @@ net_alive() { [ -n "$(ips ya.ru "$(provider)")" ]; }
 # DoH-запрос прямо к серверу (для DEFAULT_DOH и geodns test): запрос — байтами
 # через printf, ответ — разбор od. -> адреса A
 doh() { # <сервер> <имя>
-  local f="$RUN/q.$$" url
+  local f="$RUN/q.$$" url h ip
   awk -v n="$2" 'BEGIN {
     for (i = 1; i < 128; i++) ord[sprintf("%c", i)] = i
     s = "\\022\\064\\001\\000\\000\\001\\000\\000\\000\\000\\000\\000"
@@ -134,8 +141,11 @@ doh() { # <сервер> <имя>
     printf "%s\\000\\000\\001\\000\\001", s }' > "$f.fmt"
   printf "$(cat "$f.fmt")" > "$f.q"
   url=$(doh_url "$1")
+  # имя сервера — через BOOTSTRAP, а не через dnsmasq: тот сам ходит через этот
+  # DoH, и при сбое его прокси проверка «не отвечала» и у живого сервера
+  h=${1%%/*}; ip=$(ips "$h" "${BOOTSTRAP%%,*}" | head -n 1)
   curl -s --max-time 6 -H 'content-type: application/dns-message' -H 'accept: application/dns-message' \
-    --data-binary @"$f.q" "$url" -o "$f.r" 2>/dev/null
+    ${ip:+--resolve "$h:443:$ip"} --data-binary @"$f.q" "$url" -o "$f.r" 2>/dev/null
   { od -An -tu1 -v "$f.r" 2>/dev/null || hexdump -v -e '1/1 "%u "' "$f.r" 2>/dev/null; } | awk '
     { for (i = 1; i <= NF; i++) b[++N] = $i }
     function skip(p) { while (p <= N) { if (b[p] == 0) return p + 1; if (b[p] >= 192) return p + 2; p += b[p] + 1 } return p }
@@ -218,7 +228,18 @@ scanned() { awk -F'\t' '!/^[#=+!?]/ && NF > 1 { print $1 }' "$1" 2>/dev/null | s
 
 # ---------------------------------------------------------------- выбор — общий код модуля
 rel_update() { awk -F'\t' -v gf="$GROUPS" -v rf="$SCAN.rel" -f "$D/geo-rel.awk" "$1"; }
-pool() { [ -s "$SCAN" ] || return 0; awk -F'\t' -v of="$OFF" -v pf="$SCAN.pin" -f "$D/geo-pool.awk" "$SCAN" | sort -n | head -n 3; }
+# Не брать: отключённые вручную и на паузе; на паузе все ответившие — только
+# отключённые вручную (лучше пробовать, чем никуда)
+off_eff() {
+  local e="$RUN/off.eff"
+  { cat "$OFF" 2>/dev/null; cut -f1 "$DOWN" 2>/dev/null; } | awk 'NF && !s[$0]++' > "$e.$$"
+  if [ -s "$DOWN" ] && ! awk -F'\t' -v of="$e.$$" 'BEGIN { while ((getline l < of) > 0) o[l] = 1 }
+      !/^[#=+!?]/ && $2 == "ok" && $4 > 0 && !($1 in o) { x = 1 } END { exit !x }' "$SCAN" 2>/dev/null; then
+    cat "$OFF" 2>/dev/null > "$e.$$"
+  fi
+  mv -f "$e.$$" "$e"; echo "$e"
+}
+pool() { [ -s "$SCAN" ] || return 0; awk -F'\t' -v of="$(off_eff)" -v pf="$SCAN.pin" -f "$D/geo-pool.awk" "$SCAN" | sort -n | head -n 3; }
 pick() { pool | head -n 1 | cut -f2; }
 pick_or_fallback() { local p; p=$(pick); echo "${p:-$FALLBACK}"; }
 routes() { # [save] -> «домен<TAB>сервер<TAB>протокол» | «домен<TAB>-»
@@ -228,7 +249,7 @@ routes() { # [save] -> «домен<TAB>сервер<TAB>протокол» | «
   ft=$(scan_time "${h:-$SCAN}")
   [ -n "$ft" ] && [ $(( $(date +%s) - ft )) -lt $(( HOT_EVERY * 2 )) ] && fresh=1
   names > "$RUN/names"
-  awk -F'\t' -v prf="$PREFER" -v of="$OFF" -v pf="$SCAN.pin" -v gpf="$ST/groups.pin" -v rf="$SCAN.rel" \
+  awk -F'\t' -v prf="$PREFER" -v of="$(off_eff)" -v pf="$SCAN.pin" -v gpf="$ST/groups.pin" -v rf="$SCAN.rel" \
     -v fresh="$fresh" -v base="$HOT_BASE" -v gf="$GROUPS" -v gl="$RUN/names" -v hf="$h" -v save="$1" -v pool="$(pick)" \
     -f "$D/geo-routes.awk" "$SCAN" $h
 }
@@ -322,28 +343,103 @@ default_start() {
   proxy_alive "$DEFAULT_PORT" || proxy_start "$DEFAULT_DOH" "$DEFAULT_PORT"
 }
 default_ok() { [ -n "$(doh "$DEFAULT_DOH" ya.ru | grep -v '[^0-9.]')" ]; }
+# Переключение — только после трёх проверок подряд (три минуты) в одну сторону:
+# DoH, отвечающий через раз, иначе дёргал перезапуск dnsmasq раз в минуту, и на
+# эти секунды DNS пропадал у всей сети (11.11)
 default_keep() {
+  local n
   [ -n "$DEFAULT_DOH" ] || return 0
   default_start
+  n=$(cat "$RUN/default.streak" 2>/dev/null); n=${n:-0}
   if [ ! -f "$RUN/default.down" ]; then
-    if ! default_ok && net_alive; then
-      : > "$RUN/default.down"
-      log "DoH по умолчанию ($DEFAULT_DOH) не отвечает — временно DNS провайдера"
+    if ! default_ok && net_alive; then n=$((n + 1)); else n=0; fi
+    if [ "$n" -ge 3 ]; then
+      n=0; : > "$RUN/default.down"
+      log "DoH по умолчанию ($DEFAULT_DOH) не отвечает три минуты — $(provider_text)"
       build; dnsmasq_restart
     fi
-  elif default_ok; then
-    rm -f "$RUN/default.down"
-    log "DoH по умолчанию ($DEFAULT_DOH) снова отвечает — всё, что не из списков, снова через него"
-    build; dnsmasq_restart
+  else
+    if default_ok; then n=$((n + 1)); else n=0; fi
+    if [ "$n" -ge 3 ]; then
+      n=0; rm -f "$RUN/default.down"
+      log "DoH по умолчанию ($DEFAULT_DOH) снова отвечает — всё, что не из списков, снова через него"
+      build; dnsmasq_restart
+    fi
   fi
+  echo "$n" > "$RUN/default.streak"
 }
 default_text() {
   if default_on; then echo "DoH $DEFAULT_DOH"
-  elif [ -n "$DEFAULT_DOH" ]; then echo "DNS провайдера $(providers_all | tr '\n' ' ')(DoH $DEFAULT_DOH не отвечает)"
-  else echo "DNS провайдера $(providers_all | tr '\n' ' ')"; fi
+  elif [ -n "$DEFAULT_DOH" ]; then echo "$(provider_text) (DoH $DEFAULT_DOH не отвечает)"
+  else provider_text; fi
+}
+provider_text() {
+  if provider_missing; then echo "запасной DNS $(provider) — DNS провайдера нет ни в настройках роутера, ни в PROVIDER_DNS"
+  else echo "DNS провайдера $(providers_all | tr '\n' ' ' | sed 's/ $//')"; fi
 }
 
 # ---------------------------------------------------------------- сторож
+# ---------------------------------------------------------------- пауза серверов
+# ТСПУ в разных сетях и районах блокирует разные адреса прокси серверов обхода
+# (11.11: прокси wlrus перестал открываться, и с ним — ChatGPT, Claude и игры
+# Supercell, закреплённые за ним). Сервер, чей прокси не открывается, встаёт
+# на паузу (down.list), сайты уходят на другие; проверка снова — через 30 мин,
+# 1 ч, дальше раз в 2 ч; открылся — сервер возвращается.
+# Прокси сервера — адрес, который он отдаёт чаще всего; домен — тот, для
+# которого он его отдаёт (основные сервисы — первыми)
+proxy_targets() { # -> «сервер прокси домен»
+  awk -F'\t' -v base="$HOT_BASE" '
+    BEGIN { nb = split(base, b, " "); for (i = 1; i <= nb; i++) B[b[i]] = 1 }
+    /^\+/ { h = substr($1, 2); if (!(h in px) || $3 + 0 > pn[h]) { px[h] = $2; pn[h] = $3 + 0 }; next }
+    /^=/ { d = substr($1, 2); n = split($2, sv, ",")
+      for (i = 1; i <= n; i++) { h = sv[i]; if (!(h in dm) || ((d in B) && !(dm[h] in B))) dm[h] = d } }
+    END { for (h in px) if (h in dm) print h, px[h], dm[h] }' "$SCAN" 2>/dev/null
+}
+# Открывается ли сайт через прокси: TLS и хоть какой-то ответ HTTP
+proxy_open() { # <прокси> <домен>
+  [ "$(curl -s -o /dev/null -m 8 -w '%{http_code}' --resolve "$2:443:$1" "https://$2/" 2>/dev/null)" != 000 ]
+}
+# Проверить прокси: all — всех серверов (после полной проверки), use — серверов
+# в работе и тех, кто на паузе со сроком (после частой), due — только на паузе
+# со сроком (сторож, раз в минуту — обычно ничего). Пауза сменилась — маршруты заново
+proxy_check() { # all|use|due
+  local now act s ip d ch
+  [ -s "$SCAN" ] || return 0
+  now=$(date +%s)
+  act=" $(pick) $(cut -f2 "$RUN/routes" 2>/dev/null | sort -u | tr '\n' ' ') "
+  proxy_targets | while read -r s ip d; do
+    nx=$(awk -F'\t' -v s="$s" '$1 == s { print $4; exit }' "$DOWN" 2>/dev/null)
+    case "$1" in
+      all) ;;
+      use) if [ -n "$nx" ]; then [ "$nx" -le "$now" ] || continue; else case "$act" in *" $s "*) ;; *) continue ;; esac; fi ;;
+      *) [ -n "$nx" ] && [ "$nx" -le "$now" ] || continue ;;
+    esac
+    if proxy_open "$ip" "$d"; then echo "$s	$ip	up"; else echo "$s	$ip	down"; fi
+  done > "$RUN/pcheck"
+  [ -s "$RUN/pcheck" ] || return 0
+  ch=$(cat "$DOWN" 2>/dev/null | awk -F'\t' -v res="$RUN/pcheck" -v now="$now" -v out="$DOWN.new" '
+    BEGIN { while ((getline l < res) > 0) { split(l, a, "\t"); v[a[1]] = a[3]; ip[a[1]] = a[2] } }
+    NF >= 5 { old[$1] = $0; n[$1] = $5; since[$1] = $3 }
+    END {
+      for (s in v) {
+        if (v[s] == "down") {
+          k = (s in n) ? n[s] + 1 : 1; d = 1800
+          for (i = 1; i < k && d < 7200; i++) d *= 2
+          if (d > 7200) d = 7200
+          print s "\t" ip[s] "\t" ((s in since) ? since[s] : now) "\t" (now + d) "\t" k > out
+          if (!(s in old)) print "down " s " " ip[s]
+        } else if (s in old) print "up " s
+      }
+      for (s in old) if (!(s in v)) print old[s] > out
+      close(out) }')
+  if [ -s "$DOWN.new" ]; then mv -f "$DOWN.new" "$DOWN"; else rm -f "$DOWN.new" "$DOWN"; fi
+  [ -n "$ch" ] || return 0
+  printf '%s\n' "$ch" | while read -r w s ip; do
+    if [ "$w" = down ]; then log "на паузе: $s — его прокси $ip отсюда не открывается, сайты уходят на другие серверы"
+    else log "снова в работе: $s — прокси открывается"; fi
+  done
+  apply
+}
 watch() {
   echo $$ > "$RUN/watch.pid"
   sleep 20   # после загрузки — дать WAN подняться
@@ -353,8 +449,9 @@ watch() {
       if net_alive || ! pidof dnsmasq >/dev/null; then log "dnsmasq не отвечает — перезапуск"; dnsmasq_restart; fi
     fi
     proxies_keep
-    if scan_due "$SCAN" "$SCAN_EVERY"; then scan full && apply
-    elif scan_due "$SCAN.hot" "$HOT_EVERY" && [ "$(scan_time "$SCAN")" -lt $(( $(date +%s) - 60 )) ]; then scan hot && apply
+    if scan_due "$SCAN" "$SCAN_EVERY"; then scan full && apply && proxy_check all
+    elif scan_due "$SCAN.hot" "$HOT_EVERY" && [ "$(scan_time "$SCAN")" -lt $(( $(date +%s) - 60 )) ]; then scan hot && apply && proxy_check use
+    else proxy_check due
     fi
     sleep "$ALIVE_EVERY"
   done
@@ -385,6 +482,7 @@ status() {
   for g in $(awk '!/^#/ && NF { print $1 }' "$GROUPS" 2>/dev/null); do
     echo "группа $g: $(awk -v g="@$g" '$1 == g { print $2 }' "$ST/groups.pin" 2>/dev/null)"
   done
+  awk -F'\t' 'NF >= 4 { print "на паузе: " $1 " (прокси " $2 " отсюда не открывается)" }' "$DOWN" 2>/dev/null
   echo "dnsmasq:  $(pidof dnsmasq >/dev/null && echo работает || echo НЕ ЗАПУЩЕН)"
   echo "сторож:   $([ -n "$(watch_pid)" ] && echo работает || echo НЕ ЗАПУЩЕН)"
   echo "всё остальное: $(default_text)"
@@ -424,8 +522,8 @@ case "$1" in
   stop) stop ;;
   restart) stop; sleep 1; start ;;
   status) status ;;
-  scan) scan full && apply; tail -n 3 "$LOG" ;;
-  check) scan hot && apply; tail -n 3 "$LOG" ;;
+  scan) scan full && apply && proxy_check all; tail -n 3 "$LOG" ;;
+  check) scan hot && apply && proxy_check use; tail -n 3 "$LOG" ;;
   routes) routes ;;
   test) test_domain "$2" ;;
   update) update ;;
