@@ -279,7 +279,7 @@ routes() { # [save] -> «домен<TAB>сервер<TAB>протокол» | «
   [ -n "$ft" ] && [ $(( $(date +%s) - ft )) -lt $(( HOT_EVERY * 2 )) ] && fresh=1
   names > "$RUN/names"
   awk -F'\t' -v prf="$PREFER" -v of="$(off_eff)" -v pf="$SCAN.pin" -v gpf="$ST/groups.pin" -v rf="$SCAN.rel" \
-    -v fresh="$fresh" -v keepfail=1 -v base="$HOT_BASE" -v gf="$GROUPS" -v gl="$RUN/names" -v hf="$h" -v save="$1" -v pool="$(pick)" \
+    -v fresh="$fresh" -v keepfail=1 -v base="$HOT_BASE" -v gf="$GROUPS" -v gl="$RUN/names" -v hf="$h" -v save="$1" -v now="$(date +%s)" -v pool="$(pick)" \
     -f "$D/geo-routes.awk" "$SCAN" $h
 }
 pin_save() {
