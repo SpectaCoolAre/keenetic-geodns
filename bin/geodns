@@ -48,7 +48,7 @@ DEFAULT_DOH=""; DEFAULT_PORT=5099
 # как в модуле (lib/dns.sh): полная проверка — раз в 4 часа, частая — раз в
 # полчаса, основные сервисы — всегда в частой
 SCAN_EVERY=14400; HOT_EVERY=1800
-HOT_BASE="chatgpt.com claude.ai gemini.google.com gamea.clashofclans.com accounts.supercell.com spotify.com"
+HOT_BASE="chatgpt.com claude.ai gemini.google.com geminiweb-pa.clients6.google.com signaler-pa.clients6.google.com apis.google.com waa-pa.clients6.google.com gamea.clashofclans.com accounts.supercell.com spotify.com"
 REF="https://common.dot.dns.yandex.net/dns-query,77.88.8.8:53"
 SCAN_VER=4
 # пока проверки не было (или ни один сервер не ответил) — весь список сюда, а
