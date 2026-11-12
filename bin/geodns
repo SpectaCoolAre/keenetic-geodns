@@ -203,6 +203,20 @@ scan() { # full|hot
     grep -q -v '^#' "$out" || log "  geodns-helper ничего не вывел"
     rm -f "$out"; : > "$RUN/scan.failed"; return 1
   fi
+  # полная: ответили меньше половины прошлых (было не меньше 4) — сбой сети
+  # на время проверки (12.11: 2 из 13, и все группы ушли на semqka); третий
+  # такой итог подряд — уже правда, принимается
+  if [ "$1" = full ]; then
+    local nn po nf
+    nn=$(grep -c '	ok	' "$out"); po=$(grep -c '	ok	' "$SCAN" 2>/dev/null); po=${po:-0}
+    nf=$(cat "$RUN/scan.short" 2>/dev/null); nf=${nf:-0}
+    if [ "$po" -ge 4 ] && [ $((nn * 2)) -lt "$po" ] && [ "$nf" -lt 2 ]; then
+      echo $((nf + 1)) > "$RUN/scan.short"
+      log "проверка (full): ответили $nn серверов, в прошлый раз $po — похоже на сбой сети, остаётся прежний итог; повтор через 10 минут"
+      rm -f "$out"; : > "$RUN/scan.failed"; return 1
+    fi
+    rm -f "$RUN/scan.short"
+  fi
   rm -f "$RUN/scan.failed"
   if [ "$1" = hot ]; then mv -f "$out" "$SCAN.hot"; rel_update "$SCAN.hot"
   else mv -f "$out" "$SCAN"; rm -f "$SCAN.hot"; rel_update "$SCAN"; fi

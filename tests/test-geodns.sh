@@ -142,6 +142,17 @@ if command -v busybox >/dev/null 2>&1; then
   [ "$(wc -l < "$S/scan.tsv.rel")" -gt 1 ]; ok $? "the reliability history is updated by busybox awk"
 fi
 
+echo "== a full check where most servers fell silent (network glitch)"
+cp "$S/scan.tsv" "$SB/scan.keep"; okb=$(grep -c '	ok	' "$S/scan.tsv")
+awk -F'\t' 'BEGIN{OFS="\t"} !/^[#=+!?]/ && NF > 2 && $2 == "ok" && n++ >= 1 { $2 = "fail"; $4 = 0 } { print }' "$FIX" > "$SB/short.tsv"
+FIXK=$FIX; FIX="$SB/short.tsv"; helper_ok; rm -f "$RT/opt/var/run/geodns/scan.failed" "$RT/opt/var/run/geodns/scan.short"
+gx scan full > /dev/null 2>&1; [ $? = 1 ]; ok $? "one server of $okb answering is a glitch: the check is not taken"
+[ "$(grep -c '	ok	' "$S/scan.tsv")" = "$okb" ]; ok $? "and the previous result stays"
+has "$(tail -n 2 "$L")" "похоже на сбой сети" "the log says why"
+rm -f "$RT/opt/var/run/geodns/scan.failed"; gx scan full > /dev/null 2>&1; rm -f "$RT/opt/var/run/geodns/scan.failed"; gx scan full > /dev/null 2>&1
+[ "$(grep -c '	ok	' "$S/scan.tsv")" = 1 ]; ok $? "the third such check in a row is the truth and is taken"
+FIX=$FIXK; helper_ok; cp "$SB/scan.keep" "$S/scan.tsv"; rm -f "$RT/opt/var/run/geodns/scan.failed" "$RT/opt/var/run/geodns/scan.short"
+
 echo "== a server fixed for a group (NullsProxy for Supercell)"
 printf 'dns.nullsproxy.com\t87.245.216.10\t%s\t%s\t1\n' "$(date +%s)" "$(( $(date +%s) + 1800 ))" > "$S/down.list"
 ! grep -qx dns.nullsproxy.com "$(gx off_eff)"; ok $? "a fixed server is never paused by the proxy probe (it says nothing about game servers)"
