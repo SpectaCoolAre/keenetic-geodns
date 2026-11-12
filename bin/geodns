@@ -190,7 +190,8 @@ scan() { # full|hot
     names > "$RUN/samples"; out=$SCAN.tmp
     { echo "#time=$(date +%s) boot=$boot v=$SCAN_VER"
       "$HELPER" -geoscan "$(servers)" -samples "@$RUN/samples" -boot "$boot" -ref "$REF" -wait 40s -max 3 \
-        -groups "$GROUPS" -asncache "$ST/asn.cache" -doh 2>"$RUN/helper.err"
+        -groups "$GROUPS" -asncache "$ST/asn.cache" -doh \
+        -verifyhosts "$(echo "$HOT_BASE" | tr ' ' '\n' | grep -v '^game' | tr '\n' ' ')" 2>"$RUN/helper.err"
     } > "$out"
   fi
   rmdir "$RUN/scan.lock" 2>/dev/null
