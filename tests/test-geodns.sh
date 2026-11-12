@@ -117,6 +117,14 @@ has "$(cat "$S/down.list" 2>/dev/null)" "dns.wlrus.cfd	198.51.100.50" "the addre
 rm -f "$MOCK/ask.dns.wlrus.cfd" "$MOCK/curl.down" "$S/down.list"
 case "$(gx proxy_targets)" in *" gamea.clashofclans.com"*) ok 1 "game servers are never the probe domain (not HTTPS)" ;; *) ok 0 "game servers are never the probe domain (not HTTPS)" ;; esac
 
+# каждый основной сервис — по маршруту: прокси сервера для Claude проверяется,
+# даже если первый его домен — другой сайт
+cp "$RT/opt/var/run/geodns/routes" "$SB/routes.keep" 2>/dev/null
+srv=$(awk '/^\+/ { print substr($1, 2); exit }' "$S/scan.tsv")
+printf 'claude.ai\t%s\ttls\n' "$srv" > "$RT/opt/var/run/geodns/routes"
+has "$(gx proxy_targets)" "$srv $(awk -v h="+$srv" '$1 == h { print $2; exit }' "$S/scan.tsv") claude.ai" "the proxy a server gives Claude (its route) is probed too"
+cp "$SB/routes.keep" "$RT/opt/var/run/geodns/routes" 2>/dev/null
+
 echo "== a frequent check right after the full one"
 gx hot_due; [ $? = 1 ]; ok $? "right after the full check the frequent one is not due (it ran a minute later, when servers rate-limit DoH)"
 before=$(geodns routes | grep '^claude.ai	')

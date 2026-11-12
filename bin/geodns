@@ -419,14 +419,21 @@ provider_text() {
 # открывалась» и у рабочего прокси, и NullsProxy (только для Supercell)
 # вставал на паузу — игры уходили на другой сервер. Сервер, у которого есть
 # только такие домены, не проверяется
+# Кроме одного домена на сервер — каждый основной сервис (claude.ai,
+# chatgpt.com…) по маршруту: у сервера прокси разные, и проверка по одному
+# сайту не замечала закрытый прокси для другого (модуль, МТС, 12.11)
 proxy_targets() { # -> «сервер прокси домен»; закреплённые не проверяются
-  awk -F'\t' -v base="$HOT_BASE" -v fx=" $(fixed | tr '\n' ' ') " '
+  awk -F'\t' -v base="$HOT_BASE" -v fx=" $(fixed | tr '\n' ' ') " \
+    -v rt="$(awk -F'\t' '$2 != "" && $2 != "-" { printf " %s=%s", $1, $2 }' "$RUN/routes" 2>/dev/null)" '
     BEGIN { nb = split(base, b, " "); for (i = 1; i <= nb; i++) B[b[i]] = 1 }
     /^\+/ { h = substr($1, 2); if (!(h in px) || $3 + 0 > pn[h]) { px[h] = $2; pn[h] = $3 + 0 }; next }
     /^=game[a-z0-9]*\./ { next }
     /^=/ { d = substr($1, 2); n = split($2, sv, ",")
       for (i = 1; i <= n; i++) { h = sv[i]; if (!(h in dm) || ((d in B) && !(dm[h] in B))) dm[h] = d } }
-    END { for (h in px) if ((h in dm) && !index(fx, " " h " ")) print h, px[h], dm[h] }' "$SCAN" 2>/dev/null
+    END { for (h in px) if ((h in dm) && !index(fx, " " h " ")) print h, px[h], dm[h]
+      nr = split(rt, rr, " "); for (i = 1; i <= nr; i++) { j = index(rr[i], "="); R[substr(rr[i], 1, j - 1)] = substr(rr[i], j + 1) }
+      for (i = 1; i <= nb; i++) { d = b[i]; if (d ~ /^game[a-z0-9]*\./ || !(d in R)) continue; h = R[d]
+        if ((h in px) && dm[h] != d && !index(fx, " " h " ")) print h, px[h], d } }' "$SCAN" 2>/dev/null
 }
 # Открывается ли сайт через прокси: TLS и хоть какой-то ответ HTTP
 proxy_open() { # <прокси> <домен>
@@ -459,7 +466,9 @@ proxy_check() { # all|use|due
   fi
   [ -s "$RUN/pcheck" ] || return 0
   ch=$(cat "$DOWN" 2>/dev/null | awk -F'\t' -v res="$RUN/pcheck" -v now="$now" -v out="$DOWN.new" '
-    BEGIN { while ((getline l < res) > 0) { split(l, a, "\t"); v[a[1]] = a[3]; ip[a[1]] = a[2] } }
+    BEGIN { while ((getline l < res) > 0) { split(l, a, "\t")
+        # несколько прокси сервера: не открылся хоть один — пауза
+        if (!(a[1] in v) || a[3] == "down") { v[a[1]] = a[3]; ip[a[1]] = a[2] } } }
     NF >= 5 { old[$1] = $0; n[$1] = $5; since[$1] = $3 }
     END {
       for (s in v) {
