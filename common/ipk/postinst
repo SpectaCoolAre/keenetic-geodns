@@ -54,6 +54,10 @@ if [ -n "$(find /opt/tmp/geodns_binary -type f -size +0 2>/dev/null)" ]; then
 fi
 
 touch /opt/etc/geodns/upstream.conf /opt/etc/geodns/dnsmasq-geo.conf
+# domains dropped from geoblock.list in a release: opkg keeps a conffile the
+# user changed, so a dropped domain would stay (www.google.com, 1.0.8: Google
+# search went through a bypass server, slow, and almost none proxies it)
+[ -f /opt/etc/geodns/geoblock.list ] && sed -i '/^www\.google\.com$/d' /opt/etc/geodns/geoblock.list
 dnsmasq_conf_func
 
 INSTALL_TYPE=$(cat "/opt/tmp/geodns_install_type" 2>/dev/null)
